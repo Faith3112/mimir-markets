@@ -96,7 +96,7 @@ pub fn create_claim(env: &Env, creator: Address, params: CreateParams) -> Result
             is_private: params.is_private,
             invite_key_hash,
         },
-        fees: snapshot,
+        fees: snapshot.clone(),
     };
 
     let category = claim.category.clone();
@@ -220,6 +220,29 @@ pub fn challenge_claim(
         stake: stake_amount,
     }
     .publish(env);
+    Ok(())
+}
+
+
+pub fn transition_deadline(env: &Env, claim_id: u64) -> Result<(), Error> {
+    let mut claim = storage::get_claim(env, claim_id)?;
+    if claim.state != ClaimState::Open {
+        return Err(Error::ClaimNotOpen);
+    }
+    if env.ledger().timestamp() < claim.deadline {
+        return Err(Error::Timelocked);
+    }
+
+    claim.state = ClaimState::Cancelled;
+    let creator = claim.creator.clone();
+    let refund = claim.creator_stake;
+    storage::set_claim(env, claim_id, &claim);
+
+    // Cancellation is a refund: no fee.
+    let usdc = storage::usdc(env)?;
+    escrow::push_or_park(env, &usdc, &creator, refund);
+
+    events::ClaimCancelled { id: claim_id }.publish(env);
     Ok(())
 }
 
