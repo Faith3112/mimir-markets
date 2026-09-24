@@ -771,3 +771,37 @@ fn a_full_roster_is_fully_refunded_on_an_unresolvable_verdict() {
     assert_eq!(f.client().get_claim(&id).remaining_escrow, 0);
     assert_eq!(f.escrow_balance(), 0);
 }
+
+
+#[test]
+fn transition_deadline_cancels_underfunded_open_claim() {
+    let f = Fixture::new(0, 0);
+    let creator = f.user(100 * USDC);
+    let id = f.client().create_claim(&creator, &f.params(10 * USDC));
+
+    // Too early
+    let err = f.client().try_transition_deadline(&id).unwrap_err().unwrap();
+    assert_eq!(err, Error::Timelocked);
+
+    // Pass deadline
+    f.advance_to(f.client().get_claim(&id).deadline + 1);
+
+    f.client().transition_deadline(&id);
+    let claim = f.client().get_claim(&id);
+    assert_eq!(claim.state, ClaimState::Cancelled);
+    assert_eq!(f.token().balance(&creator), 100 * USDC);
+}
+
+#[test]
+fn transition_deadline_rejected_if_active() {
+    let f = Fixture::new(0, 0);
+    let creator = f.user(100 * USDC);
+    let id = f.client().create_claim(&creator, &f.params(10 * USDC));
+    let challenger = f.user(100 * USDC);
+    
+    f.client().challenge_claim(&challenger, &id, &(10 * USDC), &None);
+    f.advance_to(f.client().get_claim(&id).deadline + 1);
+
+    let err = f.client().try_transition_deadline(&id).unwrap_err().unwrap();
+    assert_eq!(err, Error::ClaimNotOpen);
+}
