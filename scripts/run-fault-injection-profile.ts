@@ -282,7 +282,7 @@ function selectProfiles(): readonly FaultProfile[] {
   }
   const all = getAllFaultProfiles();
   if (CATEGORY) return all.filter((p) => p.category === CATEGORY);
-  if (ALL) return all;
+  if (ALL) return [...all];
   return [];
 }
 

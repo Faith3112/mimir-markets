@@ -83,7 +83,7 @@ test("regression: scoped package names encode into valid purls", () => {
       },
     },
   });
-  const c = bom.components[0] as any;
+  const c: any = bom.components[0];
   assert.equal(c.name, "@scope/pkg");
   assert.match(c.purl, /^pkg:npm\/%40scope\/pkg@9\.9\.9$/);
   assert.ok(c.hashes?.[0]?.alg === "SHA-512");
