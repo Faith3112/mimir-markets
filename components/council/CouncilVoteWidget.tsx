@@ -49,6 +49,7 @@ interface CouncilResponse {
   stakedCount: number;
   totalUsdc:   number;
   votes:       PersonaVote[];
+  cache?:      VSCacheFreshness;
 }
 
 export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
