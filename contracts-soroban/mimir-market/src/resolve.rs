@@ -58,6 +58,10 @@ pub fn resolve_claim_versioned(
 ) -> Result<(), Error> {
     storage::oracle(env)?.require_auth();
 
+    // Decode first: an unknown version must never be written, and `None` is not
+    // a settled verdict. Both refusals leave the claim untouched.
+    let winner_side = verdict.decode()?;
+
     let mut claim = storage::get_claim(env, claim_id)?;
     if claim.state == ClaimState::Resolved {
         if claim.winner_side == winner_side
@@ -74,9 +78,6 @@ pub fn resolve_claim_versioned(
     if env.ledger().timestamp() < claim.deadline {
         return Err(Error::NotYetExpired);
     }
-    // Decode first: an unknown version must never be written, and `None` is not
-    // a settled verdict. Both refusals leave the claim untouched.
-    let winner_side = verdict.decode()?;
     if confidence > 100 {
         return Err(Error::InvalidConfidence);
     }
