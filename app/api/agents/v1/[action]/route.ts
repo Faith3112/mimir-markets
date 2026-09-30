@@ -508,7 +508,7 @@ async function handleAgentApiPost(
     const gate = authorizeAction(agent, { capability: "researcher", requestsThisHour: Number(body.requestsThisHour ?? 0) });
     if (!gate.allowed) {
       await audit(request, "rejected", gate.reason);
-      return json({ error: { message: gate.reason, detail: gate.detail } }, 403);
+      return errorResponse(actionVerdictToError(gate, "researcher"));
     }
     result = await publishReasoning({ ...(body as any), agentId: agent.agentId });
   } else {

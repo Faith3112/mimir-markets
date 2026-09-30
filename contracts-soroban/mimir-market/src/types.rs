@@ -377,4 +377,8 @@ pub enum Error {
     /// The claim's combined metadata exceeded `MAX_CLAIM_METADATA_BYTES`. No
     /// stake is pulled and no storage is written for a claim over the budget.
     ClaimMetadataTooLong = 42,
+    /// Safety rail: a state transition attempted to write a claim whose math
+    /// violates double-entry conservation (liabilities exceeding backing, or
+    /// negative balances). The write is aborted.
+    ConservationViolation = 43,
 }
