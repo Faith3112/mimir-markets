@@ -821,7 +821,7 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
   }
 
   try {
-    const result = await createClaimOnChain(CREATOR.signer, {
+    const rawResult = await withBackoff("market_creator", () => createClaimOnChain(CREATOR.signer, {
       question:              candidate.question,
       creator_position:      candidate.creatorPosition,
       counter_position:      candidate.counterPosition,
@@ -835,10 +835,16 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
       max_challengers:       100,
       visibility:            "public",
       agent_owner_recipient: FEE_RECIPIENT,
-    });
+    }), { policy: CREATOR_BACKOFF });
+    const result = rawResult as { claimId: number; txHash: string; explorerUrl?: string } | undefined;
+    if (!result) return null;
     console.log(`[market-creator]   claim id #${result.claimId}`);
     return result.explorerUrl ?? result.txHash;
   } catch (err) {
+    if (err instanceof BackoffError) {
+      console.warn(`[market-creator] ${describeBackoffError(err)}`);
+      return null;
+    }
     console.error(`[market-creator] Failed to create claim:`, err);
     return null;
   }
@@ -935,14 +941,22 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; j
 
     console.log(`[market-creator] Cancelling stale claim #${id} (expired, no challenger)`);
     try {
-      const result = await cancelClaim(CREATOR.signer, id);
+      const rawResult = await withBackoff("market_creator", () => cancelClaim(CREATOR.signer, id), {
+        policy: CREATOR_BACKOFF,
+      });
+      const result = rawResult as { txHash: string; explorerUrl?: string } | undefined;
+      if (!result) continue;
       console.log(`[market-creator] ✓ Cancelled #${id} — ${result.explorerUrl ?? result.txHash}`);
       cancelled++;
       if (CANCEL_DELAY_MS > 0) {
         await new Promise((r) => setTimeout(r, CANCEL_DELAY_MS));
       }
     } catch (err) {
-      console.error(`[market-creator] Failed to cancel #${id}:`, err);
+      if (err instanceof BackoffError) {
+        console.warn(`[market-creator] ${describeBackoffError(err)}`);
+      } else {
+        console.error(`[market-creator] Failed to cancel #${id}:`, err);
+      }
     }
   }
   return { cancelled, joinable, joinableClaims, creatorExposureClaims, capSourceAvailable: true };
@@ -954,6 +968,9 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; j
  * Never throws: a worker must not stop creating markets because the proposal log is
  * unreachable. A missing proposal costs precision measurement; a crashed worker
  * costs the whole run.
+ *
+ * Proposals enter the review queue with status 'queued' — human review (or an
+ * automated policy) must approve before publish when not in autonomous mode.
  */
 async function recordProposal(
   candidate: ClaimCandidate,
@@ -1002,6 +1019,12 @@ async function recordProposal(
       disposition,
       blocked_by: null,
       claim_id: null,
+      review_status: "queued",
+      queued_at: Date.now(),
+      claimed_at: null,
+      reviewed_at: null,
+      reviewer: null,
+      failure_reason: null,
     });
     return proposalId;
   } catch (err) {

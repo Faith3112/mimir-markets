@@ -43,3 +43,5 @@ mod test_pagination;
 mod test_settlement;
 #[cfg(test)]
 mod test_verdict;
+#[cfg(test)]
+mod test_batch_read;

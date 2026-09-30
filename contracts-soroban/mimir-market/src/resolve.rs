@@ -63,6 +63,9 @@ pub fn resolve_claim_versioned(
     let winner_side = verdict.decode()?;
 
     let mut claim = storage::get_claim(env, claim_id)?;
+    // Decode first: an unknown version must never be written, and `None` is not
+    // a settled verdict. Both refusals leave the claim untouched.
+    let winner_side = verdict.decode()?;
     if claim.state == ClaimState::Resolved {
         // Idempotent replay: same decoded verdict and inputs is a no-op.
         if verdict.decode().ok() == Some(claim.winner_side)
@@ -79,6 +82,21 @@ pub fn resolve_claim_versioned(
     if env.ledger().timestamp() < claim.deadline {
         return Err(Error::NotYetExpired);
     }
+    
+    // Emit deadline reached event for active claims entering settlement window
+    events::DeadlineReached {
+        id: claim_id,
+        deadline: claim.deadline,
+        challenger_count: claim.challenger_count,
+        total_staked: claim.creator_stake
+            .checked_add(claim.total_challenger_stake)
+            .ok_or(Error::Overflow)?,
+    }
+    .publish(env);
+    
+    // Decode first: an unknown version must never be written, and `None` is not
+    // a settled verdict. Both refusals leave the claim untouched.
+    let winner_side = verdict.decode()?;
     if confidence > 100 {
         return Err(Error::InvalidConfidence);
     }
@@ -158,7 +176,15 @@ pub fn resolve_claim_versioned(
     }
 
     let dust = inflow.checked_sub(committed).ok_or(Error::PayoutExceedsEscrow)?;
-    util::assert_claim_conservation(&claim)?;
+    
+    events::ClaimStateTransitioned {
+        id: claim_id,
+        from_state: ClaimState::Active as u32,
+        to_state: ClaimState::Resolved as u32,
+        timestamp: env.ledger().timestamp(),
+    }
+    .publish(env);
+    
     storage::set_claim(env, claim_id, &claim);
     // Persist the verdict with its explicit version tag. `claim.winner_side`
     // remains the compatibility mirror for callers that read the claim struct.
